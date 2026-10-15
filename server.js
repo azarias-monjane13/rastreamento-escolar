@@ -7,7 +7,7 @@ const PORT = process.env.PORT || 3000;
 
 let ultimaLocalizacao = null;
 
-// Página principal com o mapa
+// Página principal com o mapa e os alertas
 app.get("/", (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -46,8 +46,18 @@ app.get("/", (req, res) => {
           line-height: 1.5;
         }
 
+        #alerta {
+          display: none;
+          background: #d1fae5;
+          color: #065f46;
+          padding: 12px;
+          margin-top: 10px;
+          border-radius: 6px;
+          font-weight: bold;
+        }
+
         #mapa {
-          height: calc(100vh - 105px);
+          height: calc(100vh - 145px);
           min-height: 350px;
           width: 100%;
         }
@@ -57,7 +67,12 @@ app.get("/", (req, res) => {
     <body>
       <header>
         <h2>Sistema de Rastreamento de Transporte Escolar</h2>
-        <div id="estado">A procurar a última localização...</div>
+
+        <div id="estado">
+          A procurar a última localização...
+        </div>
+
+        <div id="alerta" role="status" aria-live="polite"></div>
       </header>
 
       <div id="mapa"></div>
@@ -79,12 +94,35 @@ app.get("/", (req, res) => {
         ).addTo(mapa);
 
         let marcador = null;
+        let ultimaDataConhecida = null;
+        let primeiraConsulta = true;
+        let temporizadorAlerta = null;
 
+        // Mostrar o alerta durante seis segundos
+        function mostrarAlerta(mensagem) {
+          const alerta = document.getElementById("alerta");
+
+          alerta.textContent = mensagem;
+          alerta.style.display = "block";
+
+          if (temporizadorAlerta !== null) {
+            clearTimeout(temporizadorAlerta);
+          }
+
+          temporizadorAlerta = setTimeout(() => {
+            alerta.style.display = "none";
+          }, 6000);
+        }
+
+        // Consultar a localização recebida pelo servidor
         async function atualizarLocalizacao() {
           const estado = document.getElementById("estado");
 
           try {
-            const resposta = await fetch("/api/localizacao");
+            const resposta = await fetch(
+              "/api/localizacao",
+              { cache: "no-store" }
+            );
 
             if (!resposta.ok) {
               throw new Error("Erro ao consultar o servidor");
@@ -99,9 +137,28 @@ app.get("/", (req, res) => {
             ) {
               estado.textContent =
                 "Ainda não foram recebidas coordenadas.";
+
+              primeiraConsulta = false;
               return;
             }
 
+            // Detectar quando chega uma nova localização
+            if (primeiraConsulta) {
+              // Não alertar pela localização que já existia
+              // quando a página foi aberta.
+              ultimaDataConhecida = dados.data || null;
+              primeiraConsulta = false;
+
+            } else if (
+              dados.data &&
+              dados.data !== ultimaDataConhecida
+            ) {
+              ultimaDataConhecida = dados.data;
+
+              mostrarAlerta("Nova localização recebida!");
+            }
+
+            // Actualizar a posição do marcador no mapa
             const posicao = [
               dados.latitude,
               dados.longitude
@@ -110,13 +167,10 @@ app.get("/", (req, res) => {
             if (marcador === null) {
               marcador = L.marker(posicao)
                 .addTo(mapa)
-                .bindPopup("Última localização recebida")
-                .openPopup();
+                .bindPopup("Última localização recebida");
             } else {
               marcador.setLatLng(posicao);
             }
-
-            mapa.setView(posicao, 15);
 
             const dataRegisto = dados.data
               ? new Date(dados.data).toLocaleString()
@@ -127,15 +181,19 @@ app.get("/", (req, res) => {
               " | Longitude: " + dados.longitude +
               " | Última actualização: " + dataRegisto;
 
+            mapa.setView(posicao, 15);
+
           } catch (erro) {
             estado.textContent =
-              "Não foi possível consultar a localização. A tentar novamente...";
+              "Não foi possível consultar a localização. " +
+              "A tentar novamente...";
           }
         }
 
+        // Primeira consulta
         atualizarLocalizacao();
 
-        // Actualiza o mapa a cada 10 segundos
+        // Verificar se chegaram novas coordenadas a cada 10 segundos
         setInterval(atualizarLocalizacao, 10000);
       </script>
     </body>
@@ -147,6 +205,7 @@ app.get("/", (req, res) => {
 app.post("/api/localizacao", (req, res) => {
   const { latitude, longitude } = req.body;
 
+  // Validar as coordenadas recebidas
   if (
     typeof latitude !== "number" ||
     typeof longitude !== "number" ||
@@ -162,6 +221,7 @@ app.post("/api/localizacao", (req, res) => {
     });
   }
 
+  // Guardar a última localização recebida
   ultimaLocalizacao = {
     latitude,
     longitude,
