@@ -7,10 +7,143 @@ const PORT = process.env.PORT || 3000;
 
 let ultimaLocalizacao = null;
 
+// Página principal com o mapa
 app.get("/", (req, res) => {
-  res.send("Servidor de Rastreamento Escolar activo!");
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="pt">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+      <title>Sistema de Rastreamento Escolar</title>
+
+      <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      >
+
+      <style>
+        body {
+          margin: 0;
+          font-family: Arial, sans-serif;
+          background: #f2f5f9;
+        }
+
+        header {
+          padding: 18px;
+          background: #17365d;
+          color: white;
+        }
+
+        h2 {
+          margin: 0 0 10px;
+          font-size: 20px;
+        }
+
+        #estado {
+          font-size: 14px;
+          line-height: 1.5;
+        }
+
+        #mapa {
+          height: calc(100vh - 105px);
+          min-height: 350px;
+          width: 100%;
+        }
+      </style>
+    </head>
+
+    <body>
+      <header>
+        <h2>Sistema de Rastreamento de Transporte Escolar</h2>
+        <div id="estado">A procurar a última localização...</div>
+      </header>
+
+      <div id="mapa"></div>
+
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+      <script>
+        const mapa = L.map("mapa").setView(
+          [-25.9692, 32.5732],
+          13
+        );
+
+        L.tileLayer(
+          "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+          {
+            maxZoom: 19,
+            attribution: "&copy; OpenStreetMap contributors"
+          }
+        ).addTo(mapa);
+
+        let marcador = null;
+
+        async function atualizarLocalizacao() {
+          const estado = document.getElementById("estado");
+
+          try {
+            const resposta = await fetch("/api/localizacao");
+
+            if (!resposta.ok) {
+              throw new Error("Erro ao consultar o servidor");
+            }
+
+            const dados = await resposta.json();
+
+            if (
+              !dados ||
+              typeof dados.latitude !== "number" ||
+              typeof dados.longitude !== "number"
+            ) {
+              estado.textContent =
+                "Ainda não foram recebidas coordenadas.";
+              return;
+            }
+
+            const posicao = [
+              dados.latitude,
+              dados.longitude
+            ];
+
+            if (marcador === null) {
+              marcador = L.marker(posicao)
+                .addTo(mapa)
+                .bindPopup("Última localização recebida")
+                .openPopup();
+            } else {
+              marcador.setLatLng(posicao);
+            }
+
+            mapa.setView(posicao, 15);
+
+            const dataRegisto = dados.data
+              ? new Date(dados.data).toLocaleString()
+              : "Não disponível";
+
+            estado.textContent =
+              "Latitude: " + dados.latitude +
+              " | Longitude: " + dados.longitude +
+              " | Última actualização: " + dataRegisto;
+
+          } catch (erro) {
+            estado.textContent =
+              "Não foi possível consultar a localização. A tentar novamente...";
+          }
+        }
+
+        atualizarLocalizacao();
+
+        // Actualiza o mapa a cada 10 segundos
+        setInterval(atualizarLocalizacao, 10000);
+      </script>
+    </body>
+    </html>
+  `);
 });
 
+// Receber localização do ESP32
 app.post("/api/localizacao", (req, res) => {
   const { latitude, longitude } = req.body;
 
@@ -43,10 +176,12 @@ app.post("/api/localizacao", (req, res) => {
   });
 });
 
+// Consultar a última localização
 app.get("/api/localizacao", (req, res) => {
   res.json(ultimaLocalizacao);
 });
 
+// Iniciar servidor
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor activo na porta ${PORT}`);
 });
