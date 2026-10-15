@@ -1,0 +1,12 @@
+{
+  "name": "rastreamento-escolar",
+  "version": "1.0.0",
+  "description": "Sistema de Rastreamento de Transporte Escolar baseado em GPS e GSM",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
